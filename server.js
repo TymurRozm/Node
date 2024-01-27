@@ -1,26 +1,42 @@
+// Встановлюємо строгий режим
+"use strict";
+
+// Імпортуємо модуль http
 import http from "http";
-import httpProxy from "http-proxy";
 
-// Створюємо проксі-сервер
-const proxy = httpProxy.createProxyServer();
+// Визначаємо порт для сервера
+const PORT = 8000;
 
-// Створюємо HTTP-сервер
-const server = http.createServer((req, res) => {
-  // Перенаправляємо запити через проксі до локального сервера на порті 8080
-  proxy.web(req, res, { target: "http://localhost:3000" });
-});
+// Функція для отримання тіла запиту
+const receiveBody = async (stream) => {
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(chunk);
+  return Buffer.concat(chunks);
+};
 
-// Слухаємо порт, на якому буде доступний проксі-сервер
-const port = 8080;
-server.listen(port, () => {
-  console.log(`Server listening on port ${port}`);
-});
+// Створюємо сервер
+http
+  .createServer(async (req, res) => {
+    // Витягуємо необхідні властивості з запиту
+    const { headers, url, method } = req;
+    const { pathname, hostname } = new URL(url);
 
-// Обробляємо помилки проксі
-proxy.on("error", (err, req, res) => {
-  console.error("Proxy error:", err);
-  res.writeHead(500, {
-    "Content-Type": "text/plain",
-  });
-  res.end("Proxy error");
-});
+    // Задаємо параметри для зовнішнього запиту
+    const options = { hostname, path: pathname, method, headers };
+
+    // Ініціалізуємо зовнішній запит
+    const request = http.request(
+      options,
+      (response) => void response.pipe(res),
+    );
+
+    // Обробляємо POST-запити, якщо такі є
+    if (method === "POST") {
+      const body = await receiveBody(req);
+      request.write(body);
+    }
+
+    // Завершуємо зовнішній запит
+    request.end();
+  })
+  .listen(PORT); // Слухаємо зазначений порт
